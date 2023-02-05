@@ -7,7 +7,8 @@
     "lib": "lib"
   },
   "scripts": {
-    "start": "npx nodemon todos.js"
+    "start": "npx nodemon todos.js",
+    "debug": "npx nodemon --inspect todos.js"
   },
   "author": "",
   "license": "ISC",
@@ -15,6 +16,7 @@
     "express": "^4.18.2",
     "express-flash": "^0.0.2",
     "express-session": "^1.17.3",
+    "express-validator": "^6.14.3",
     "morgan": "^1.10.0",
     "pug": "^3.0.2"
   },
