@@ -192,6 +192,65 @@ app.post(`/lists/:todoListId/todos`,
   }
 );
 
+app.get(`/lists/:todoListId/edit`, (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = loadTodoList(+todoListId);
+
+  if (!todoList) {
+    next(new Error('Not found.'));
+  } else {
+    res.render('edit-list', {
+      todoList
+    });
+  }
+});
+
+app.post(`/lists/:todoListId/destroy`, (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = loadTodoList(+todoListId);
+
+  if (!todoList) {
+    next(new Error("Not found."));
+  } else {
+    let indexToRemove = todoLists.indexOf(todoList);
+    todoLists.splice(indexToRemove, 1);
+    req.flash("success", "Todo list removed.");
+  }
+
+  res.redirect("/lists");
+});
+
+app.post(`/lists/:todoListId/edit`,
+  [
+    body("todoListTitle")
+      .isLength({ min: 1 })
+      .withMessage("New list name required.")
+      .isLength({ max: 100 })
+      .withMessage("New list name must be between 1 and 100 characters.")
+  ], 
+  (req, res, next) => {
+    let todoListId = req.params.todoListId;
+    let todoList = loadTodoList(+todoListId);
+
+    if (!todoList) {
+      next(new Error("Not found."));
+    } else {
+      let errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        errors.array().forEach(message => req.flash("error", message.msg));
+        res.render("edit-list", {
+          flash: req.flash(),
+          todoList
+        });
+      } else {
+        todoList.setTitle(req.body.todoListTitle);
+        req.flash("success", "Todo list name updated.");
+        res.redirect("/lists");
+      }
+    }
+  }
+);
+
 app.get((err, req, res, _next) => {
   console.log(err);
   res.status(404).send(err.message);
