@@ -5,6 +5,7 @@ const session = require("express-session");
 const { body, validationResult } = require("express-validator");
 const TodoList = require('./lib/todolist');
 const { sortTodoLists, sortTodos } = require('./lib/sort');
+const Todo = require('./lib/todo');
 
 const app = express();
 const host = "localhost";
@@ -119,6 +120,77 @@ app.post(`/lists/:todoListId/todos/:todoId/toggle`, (req, res, next) => {
 
   res.redirect(`/lists/${todoListId}`);
 });
+
+app.post(`/lists/:todoListId/todos/:todoId/destroy`, (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = loadTodoList(+todoListId);
+  let todoId = req.params.todoId;
+
+  if (!todoList) {
+    next(new Error("Not found."));
+  } else {
+    let todo = loadTodo(+todoListId, +todoId)
+    if (!todo) {
+      next(new Error("Not found."));
+    } else {
+      let indexToRemove = todoList.findIndexOf(todo);
+      todoList.removeAt(indexToRemove);
+
+      req.flash("success", "Todo removed.");
+    }
+  }
+
+  res.redirect(`/lists/${todoListId}`);
+});
+
+app.post(`/lists/:todoListId/complete_all`, (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = loadTodoList(+todoListId);
+
+  if (!todoList) {
+    next(new Error("Not found."));
+  } else {
+    todoList.markAllDone();
+    req.flash("success", "All todos marked as done.");
+  }
+
+  res.redirect(`/lists/${todoListId}`);
+});
+
+app.post(`/lists/:todoListId/todos`,
+  [
+    body("todoTitle")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("The todo title is required.")
+      .isLength({ max: 100 })
+      .withMessage("Todo title must be between 1 and 100 characters."),
+  ],
+  (req, res, next) => {
+    let todoListId = req.params.todoListId;
+    let todoList = loadTodoList(+todoListId);
+
+    if (!todoList) {
+      next(new Error("Not found."));
+    } else {
+      let errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        errors.array().forEach(message => req.flash("error", message.msg));
+        res.render("list", {
+          flash: req.flash(),
+          todoList: todoList,
+          todos: sortTodos(todoList),
+          todoTitle: req.body.todoTitle,
+        });
+      } else {
+        let todo = new Todo(req.body.todoTitle);
+        todoList.add(todo);
+        req.flash("success", "Todo successfully added.");
+        res.redirect(`/lists/${todoListId}`);
+      }
+    }
+  }
+);
 
 app.get((err, req, res, _next) => {
   console.log(err);
