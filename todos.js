@@ -4,25 +4,17 @@ const flash = require("express-flash");
 const session = require("express-session");
 const { body, validationResult } = require("express-validator");
 const TodoList = require('./lib/todolist');
+const { sortTodoLists, sortTodos } = require('./lib/sort');
 
 const app = express();
 const host = "localhost";
 const port = 3000;
 
-const compareByTitle = (todoListA, todoListB) => {
-  let titleA = todoListA.title.toLowerCase();
-  let titleB = todoListB.title.toLowerCase();
-
-  if (titleA < titleB) {
-    return -1;
-  } else if (titleA > titleB) {
-    return 1;
-  } else {
-    return 0
-  }
-};
-
 let todoLists = require('./lib/seed-data');
+
+const loadTodoList = todoListId => {
+  return todoLists.find(list => list.id === todoListId);
+};
 
 app.set("views", "./views");
 app.set("view engine", "pug");
@@ -43,16 +35,6 @@ app.use((req, res, next) => {
   delete req.session.flash;
   next();
 });
-
-const sortTodoLists = lists => {
-  let undoneLists = lists.filter(todoList => !todoList.isDone());
-  let doneLists = lists.filter(todoList => todoList.isDone());
-
-  let sortedUndoneList = undoneLists.sort(compareByTitle);
-  let sortedDoneList = doneLists.sort(compareByTitle);
-
-  return sortedUndoneList.concat(sortedDoneList);
-};
 
 app.get("/", (req, res) => {
   res.redirect("/lists");
@@ -97,6 +79,24 @@ app.post("/lists",
     }
   }
 );
+
+app.get("/lists/:todoListId", (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = loadTodoList(+todoListId);
+  if (todoListId) {
+    res.render("list", {
+      todoList: todoList,
+      todos: sortTodos(todoList),
+    });
+  } else {
+    next(new Error("Not found."));
+  }
+});
+
+app.get((err, req, res, _next) => {
+  console.log(err);
+  res.status(404).send(err.message);
+});
 
 app.listen(port, host, () => {
   console.log(`Todos is listening on ${port} of ${host}!`);
