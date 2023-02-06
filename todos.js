@@ -4,21 +4,21 @@ const flash = require("express-flash");
 const session = require("express-session");
 const { body, validationResult } = require("express-validator");
 const TodoList = require('./lib/todolist');
-const { sortTodoLists, sortTodos } = require('./lib/sort');
 const Todo = require('./lib/todo');
+const { sortTodoLists, sortTodos } = require('./lib/sort');
+const store = require('connect-loki');
 
 const app = express();
 const host = "localhost";
 const port = 3000;
+const LokiStore = store(session);
 
-let todoLists = require('./lib/seed-data');
-
-const loadTodoList = todoListId => {
+const loadTodoList = (todoListId, todoLists) => {
   return todoLists.find(list => list.id === todoListId);
 };
 
-const loadTodo = (todoListId, todoId) => {
-  let todoList = loadTodoList(todoListId);
+const loadTodo = (todoListId, todoId, todoLists) => {
+  let todoList = loadTodoList(todoListId, todoLists);
   if (!todoList) return undefined;
   return todoList.todos.find(todo => todo.id === todoId);
 }
@@ -38,10 +38,36 @@ app.use(session({
 
 app.use(flash());
 app.use((req, res, next) => {
+  let todoLists = [];
+  if ("todoLists" in req.session) {
+    req.session.todoLists.forEach(todoList => {
+      todoLists.push(TodoList.makeTodoList(todoList));
+    });
+  }
+
+  req.session.todoLists = todoLists;
+  next();
+});
+
+app.use((req, res, next) => {
   res.locals.flash = req.session.flash;
   delete req.session.flash;
   next();
 });
+
+app.use(session({
+  cookie: {
+    httpOnly: true,
+    maxAge: 31 * 24 * 60 * 60 * 1000,
+    path: "/",
+    secure: "false",
+  },
+  name: "launch-school-todos-session-id",
+  resave: false,
+  saveUninitialized: true,
+  secret: "this is not very secure",
+  store: new LokiStore({}),
+}));
 
 app.get("/", (req, res) => {
   res.redirect("/lists");
@@ -49,7 +75,7 @@ app.get("/", (req, res) => {
 
 app.get("/lists", (req, res) => {
   res.render("lists", {
-    todoLists: sortTodoLists(todoLists),
+    todoLists: sortTodoLists(req.session.todoLists),
   });
 });
 
@@ -65,7 +91,8 @@ app.post("/lists",
       .withMessage("The list title is required.")
       .isLength({ max: 100 })
       .withMessage("List title must be between 1 and 100 characters.")
-      .custom(title => {
+      .custom((title, { req }) => {
+        let todoLists = req.session.todoLists;
         let duplicate = todoLists.find(list => list.title === title);
         return duplicate === undefined;
       })
@@ -80,7 +107,7 @@ app.post("/lists",
         todoListTitle: req.body.todoListTitle,
       });
     } else {
-      todoLists.push(new TodoList(req.body.todoListTitle));
+      req.session.todoLists.push(new TodoList(req.body.todoListTitle));
       req.flash("success", "The todo list has been created.");
       res.redirect("/lists");
     }
@@ -89,7 +116,7 @@ app.post("/lists",
 
 app.get("/lists/:todoListId", (req, res, next) => {
   let todoListId = req.params.todoListId;
-  let todoList = loadTodoList(+todoListId);
+  let todoList = loadTodoList(+todoListId, req.session.todoLists);
   if (todoListId) {
     res.render("list", {
       todoList: todoList,
@@ -103,7 +130,7 @@ app.get("/lists/:todoListId", (req, res, next) => {
 app.post(`/lists/:todoListId/todos/:todoId/toggle`, (req, res, next) => {
   let todoListId = req.params.todoListId;
   let todoId = req.params.todoId;
-  let todo = loadTodo(+todoListId, +todoId);
+  let todo = loadTodo(+todoListId, +todoId, req.session.todoLists);
 
   if (!todo) {
     next(new Error("Not found."));
@@ -123,13 +150,13 @@ app.post(`/lists/:todoListId/todos/:todoId/toggle`, (req, res, next) => {
 
 app.post(`/lists/:todoListId/todos/:todoId/destroy`, (req, res, next) => {
   let todoListId = req.params.todoListId;
-  let todoList = loadTodoList(+todoListId);
+  let todoList = loadTodoList(+todoListId, req.session.todoLists);
   let todoId = req.params.todoId;
 
   if (!todoList) {
     next(new Error("Not found."));
   } else {
-    let todo = loadTodo(+todoListId, +todoId)
+    let todo = loadTodo(+todoListId, +todoId, req.session.todoLists)
     if (!todo) {
       next(new Error("Not found."));
     } else {
@@ -145,7 +172,7 @@ app.post(`/lists/:todoListId/todos/:todoId/destroy`, (req, res, next) => {
 
 app.post(`/lists/:todoListId/complete_all`, (req, res, next) => {
   let todoListId = req.params.todoListId;
-  let todoList = loadTodoList(+todoListId);
+  let todoList = loadTodoList(+todoListId, req.session.todoLists);
 
   if (!todoList) {
     next(new Error("Not found."));
@@ -168,7 +195,7 @@ app.post(`/lists/:todoListId/todos`,
   ],
   (req, res, next) => {
     let todoListId = req.params.todoListId;
-    let todoList = loadTodoList(+todoListId);
+    let todoList = loadTodoList(+todoListId, req.session.todoLists);
 
     if (!todoList) {
       next(new Error("Not found."));
@@ -194,7 +221,7 @@ app.post(`/lists/:todoListId/todos`,
 
 app.get(`/lists/:todoListId/edit`, (req, res, next) => {
   let todoListId = req.params.todoListId;
-  let todoList = loadTodoList(+todoListId);
+  let todoList = loadTodoList(+todoListId, req.session.todoLists);
 
   if (!todoList) {
     next(new Error('Not found.'));
@@ -206,8 +233,9 @@ app.get(`/lists/:todoListId/edit`, (req, res, next) => {
 });
 
 app.post(`/lists/:todoListId/destroy`, (req, res, next) => {
+  let todoLists = req.session.todoLists
   let todoListId = req.params.todoListId;
-  let todoList = loadTodoList(+todoListId);
+  let todoList = loadTodoList(+todoListId, todoLists);
 
   if (!todoList) {
     next(new Error("Not found."));
@@ -227,10 +255,16 @@ app.post(`/lists/:todoListId/edit`,
       .withMessage("New list name required.")
       .isLength({ max: 100 })
       .withMessage("New list name must be between 1 and 100 characters.")
+      .custom((title, { req }) => {
+        let todoLists = req.session.todoLists;
+        let duplicate = todoLists.find(list => list.title === title);
+        return duplicate === undefined;
+      })
+      .withMessage("List title must be unique.")
   ], 
   (req, res, next) => {
     let todoListId = req.params.todoListId;
-    let todoList = loadTodoList(+todoListId);
+    let todoList = loadTodoList(+todoListId, req.session.todoLists);
 
     if (!todoList) {
       next(new Error("Not found."));
@@ -240,7 +274,8 @@ app.post(`/lists/:todoListId/edit`,
         errors.array().forEach(message => req.flash("error", message.msg));
         res.render("edit-list", {
           flash: req.flash(),
-          todoList
+          todoListTitle: req.body.todoListTitle,
+          todoList: todoList,
         });
       } else {
         todoList.setTitle(req.body.todoListTitle);
