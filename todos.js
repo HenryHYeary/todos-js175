@@ -30,10 +30,17 @@ app.use(morgan("common"));
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
+  cookie: {
+    httpOnly: true,
+    maxAge: 31 * 24 * 60 * 60 * 1000, // 31 days in millseconds
+    path: "/",
+    secure: false,
+  },
   name: "launch-school-todos-session-id",
   resave: false,
   saveUninitialized: true,
   secret: "this is not very secure",
+  store: new LokiStore({}),
 }));
 
 app.use(flash());
